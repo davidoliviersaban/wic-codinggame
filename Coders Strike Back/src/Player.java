@@ -14,6 +14,7 @@ class Player {
 	public static final int boostThrust = 1000;
 	public static final int W = 16000;
 	public static final int H = 9000;
+	public static final int podRadius = 400;
 	public static final int checkPointRadius = 600;
 	public static final int maxTurnToReachCheckPoint = 100;
 
