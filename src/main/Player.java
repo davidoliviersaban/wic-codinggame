@@ -8,7 +8,7 @@ class Player {
 
 	public static final boolean ACTIVATE_COLLISIONS = true;
 	public static final int MAX_PODS = 2;
-	public static final int MAX_CHECKPOINTS = 3;
+	public static int MAX_CHECKPOINTS = 10;
 	
 	/**
 	 * Generic Point class
@@ -541,13 +541,13 @@ class Player {
 		}
 		
 		public void initGame(Checkpoint cp, Pod[] pods) {
-			int i  =0;
+			
 			double baryX = 0;
 			double baryY = 0;
-			for (Pod pod : pods) {
-				this.pods[i++] = pod.clone();
-				baryX += pod.x;
-				baryY += pod.y;
+			for (int i  =0; i < pods.length; i++) {
+				this.pods[i] = pods[i].clone();
+				baryX += pods[i].x;
+				baryY += pods[i].y;
 			}
 			
 			checkpoints[0] = new Checkpoint(0,baryX/pods.length,baryY/pods.length);
