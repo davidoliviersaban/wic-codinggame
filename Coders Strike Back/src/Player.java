@@ -60,20 +60,33 @@ class Player {
 
 		GameState result = null;
 
-		Pod myPod = new Pod(new Point(in.nextInt(), in.nextInt()));
-		Time.startRoundTimer();
-
-		PointInt nextCheckPoint = new PointInt(in.nextInt(), in.nextInt());
-		myPod.nextCheckpointDist = in.nextInt(); // distance to the next checkpoint
-		myPod.nextCheckpointAngle = in.nextInt(); // angle between your pod orientation and the direction of the next checkpoint
-
-		Pod opPod = new Pod(new Point(in.nextInt(), in.nextInt()));
-
 		if (previousGameState == null) {
+
+			Pod myPod = new Pod(new Point(in.nextInt(), in.nextInt()));
+			Time.startRoundTimer();
+
+			PointInt nextCheckPoint = new PointInt(in.nextInt(), in.nextInt());
+			myPod.nextCheckpointDist = in.nextInt(); // distance to the next checkpoint
+			myPod.nextCheckpointAngle = in.nextInt(); // angle between your pod orientation and the direction of the next checkpoint
+
+			Pod opPod = new Pod(new Point(in.nextInt(), in.nextInt()));
+
 			result = new GameState(1, myPod, opPod, nextCheckPoint);
+
 		} else {
 
-			result = new GameState(previousGameState.round + 1, myPod, opPod, nextCheckPoint);
+			result = previousGameState;
+			result.round++;
+
+			result.myPod.p = new Point(in.nextInt(), in.nextInt());
+			Time.startRoundTimer();
+
+			result.nextCheckPoint = new PointInt(in.nextInt(), in.nextInt());
+
+			result.myPod.nextCheckpointDist = in.nextInt(); // distance to the next checkpoint
+			result.myPod.nextCheckpointAngle = in.nextInt(); // angle between your pod orientation and the direction of the next checkpoint
+
+			result.opPod.p = new Point(in.nextInt(), in.nextInt());
 		}
 
 		if (isDebugOn) {
@@ -259,14 +272,9 @@ class Player {
 
 		public static GameState applyAction(GameState gs, Action action) {
 
-			// TODO: implement the game engine, which applies to a given GameState the provided action, and returns the new action.
-			// This is basically reimplementing what CG did on their side.
-			// This is NOT mandatory to do it, but most of the time (if not all), it's necessary to know exactly what we're going to get if we apply a given action
-			// All AIs based on simulations will need this
-			// Note: the returned GameState could be a copy or not of the provided one
-
 			nbApplyAction++;
-			return null;
+
+			return gs;
 		}
 
 	}
@@ -287,6 +295,36 @@ class Player {
 			super();
 			this.x = x;
 			this.y = y;
+		}
+
+		public double distance2(Point p) {
+			return getDistanceSquare(this, p);
+		}
+
+		public double distance(Point p) {
+			return getDistance(this, p);
+		}
+
+		// Returns the closest point from this to straight line a-b
+		public Point closest(Point a, Point b) {
+			double da = b.y - a.y;
+			double db = a.x - b.x;
+			double c1 = da * a.x + db * a.y;
+			double c2 = -db * this.x + da * this.y;
+			double det = da * da + db * db;
+			double cx = 0;
+			double cy = 0;
+
+			if (det != 0) {
+				cx = (da * c1 - db * c2) / det;
+				cy = (da * c2 + db * c1) / det;
+			} else {
+				// Point is already on the line
+				cx = this.x;
+				cy = this.y;
+			}
+
+			return new Point(cx, cy);
 		}
 
 		public Point addVector(Vector v) {
@@ -492,6 +530,40 @@ class Player {
 		return (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y);
 	}
 
+	/**
+	 * Class responsible for handling collisions
+	 */
+	public static class Unit extends Point {
+		int id;
+		double vx, vy;
+		double radius;
+
+		public Unit(Point p) {
+			this(p.x, p.y);
+		}
+
+		public Unit(double x, double y) {
+			super(x, y);
+		}
+
+		public Unit(int id, double x, double y) {
+			this(x, y);
+			this.id = id;
+		}
+
+		public Unit(int id, double x, double y, double vx, double vy, double r) {
+			this(id, x, y);
+			this.vy = vy;
+			this.vx = vx;
+			this.radius = r;
+		}
+
+		public String toString() {
+			return String.format("{id:%d, position:%s, vx:%.2f, vy:%.2f, radius:%d}", id, super.toString(), vx, vy, (int) radius);
+		}
+
+	}
+
 	public static class GameState extends GameStateObject {
 		public int round;
 
@@ -566,12 +638,15 @@ class Player {
 	public static class Pod extends GameStateObject {
 
 		public Point p;
+		public Vector speedV;
+		public double angle;
 		public int nextCheckpointDist;
 		public int nextCheckpointAngle;
 
 		public Pod(Point p) {
 			super();
 			this.p = p;
+			this.speedV = new Vector(0, 0); // Start with no speed
 		}
 
 		@Override
@@ -638,9 +713,21 @@ class Player {
 			Action result = null;
 
 			if (gs.myPod.nextCheckpointAngle > 90 || gs.myPod.nextCheckpointAngle < -90) {
+				// We're not in the good direction, slow down
 				result = new Action(gs.nextCheckPoint, minThrust);
 			} else {
-				result = new Action(gs.nextCheckPoint, boostThrust);
+				// We're well aligned
+
+				double d = getDistance(gs.myPod.p, gs.nextCheckPoint);
+
+				if (d > 4000) {
+					// We're far, go fast (boost the first turn, after that will default to 100)
+					result = new Action(gs.nextCheckPoint, boostThrust);
+				} else {
+					// Slow down
+					result = new Action(gs.nextCheckPoint, 75 + (int) Math.round(d / 4000 * 25));
+				}
+
 			}
 
 			return result;
