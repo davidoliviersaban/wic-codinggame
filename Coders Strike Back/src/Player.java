@@ -11,7 +11,7 @@ class Player {
 	// Game constants, write them here once for all.
 	public static final int minThrust = 0;
 	public static final int maxThrust = 100;
-	public static final int boostThrust = 1000;
+	public static final int boostThrust = 650;
 	public static final int W = 16000;
 	public static final int H = 9000;
 	public static final int podRadius = 400;
@@ -63,7 +63,6 @@ class Player {
 		if (previousGameState == null) {
 
 			Pod myPod = new Pod(new Point(in.nextInt(), in.nextInt()));
-			Time.startRoundTimer();
 
 			PointInt nextCheckPoint = new PointInt(in.nextInt(), in.nextInt());
 			myPod.nextCheckpointDist = in.nextInt(); // distance to the next checkpoint
@@ -75,7 +74,7 @@ class Player {
 
 		} else {
 
-			result = previousGameState;
+			result = previousGameState.copy();
 			result.round++;
 
 			result.myPod.p = new Point(in.nextInt(), in.nextInt());
@@ -102,7 +101,7 @@ class Player {
 	// Runs a comparison between what CG gives us, and what we had predicted. Will stop the game if any difference is found, in order to highlight the need of a new test
 	private static void compareInputAgainstPrediction(GameState gameStateFromInput) {
 		if (predictedGameState != null && !predictedGameState.equals(gameStateFromInput)) {
-			stopGame = true;
+			//stopGame = true;
 			debug("Ran comparison between the input and the prediction and...");
 			debug("Got this:  " + gameStateFromInput);
 			debug("Predicted: " + predictedGameState);
@@ -712,22 +711,29 @@ class Player {
 
 			Action result = null;
 
-			if (gs.myPod.nextCheckpointAngle > 90 || gs.myPod.nextCheckpointAngle < -90) {
-				// We're not in the good direction, slow down
-				result = new Action(gs.nextCheckPoint, minThrust);
+			if (previousGameState == null) {
+				result = new Action(gs.nextCheckPoint, boostThrust);
 			} else {
-				// We're well aligned
+				Vector speed = new Vector(gs.myPod.p.x - previousGameState.myPod.p.x, gs.myPod.p.y - previousGameState.myPod.p.y);
+				Point target = addVectorToPoint(gs.nextCheckPoint, speed.mul(-1));
+				PointInt targetInt = new PointInt((int) Math.round(target.x), (int) Math.round(target.y));
 
-				double d = getDistance(gs.myPod.p, gs.nextCheckPoint);
-
-				if (d > 4000) {
-					// We're far, go fast (boost the first turn, after that will default to 100)
-					result = new Action(gs.nextCheckPoint, boostThrust);
+				if (gs.myPod.nextCheckpointAngle > 90 || gs.myPod.nextCheckpointAngle < -90) {
+					// We're not in the good direction, slow down
+					result = new Action(targetInt, minThrust);
 				} else {
-					// Slow down
-					result = new Action(gs.nextCheckPoint, 75 + (int) Math.round(d / 4000 * 25));
-				}
+					// We're well aligned
+					double d = getDistance(gs.myPod.p, target);
 
+					if (d > 4000) {
+						// We're far, go fast (boost the first turn, after that will default to 100)
+						result = new Action(targetInt, boostThrust);
+					} else {
+						// Slow down
+						result = new Action(targetInt, 75 + (int) Math.round(d / 4000 * 25));
+					}
+
+				}
 			}
 
 			return result;
