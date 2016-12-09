@@ -7,16 +7,11 @@ public class TestUtils {
 		int round = Integer.valueOf(firstLine[1]);
 		int myNbRoundsSinceLastCheckpoint = Integer.valueOf(firstLine[2]);
 		int opNbRoundsSinceLastCheckpoint = Integer.valueOf(firstLine[3]);
-		int myLaps = Integer.valueOf(firstLine[4]);
-		int opLaps = Integer.valueOf(firstLine[5]);
 
-		Player.GameState result = new Player.GameState(round, myNbRoundsSinceLastCheckpoint, opNbRoundsSinceLastCheckpoint, myLaps, opLaps);
+		Player.GameState result = new Player.GameState(round, myNbRoundsSinceLastCheckpoint, opNbRoundsSinceLastCheckpoint);
 
-		for (int i = 0; i < result.boostUsed.length; i++) {
-			result.boostUsed[i] = Boolean.valueOf(firstLine[6 + i]);
-		}
-		result.isWonGame = Boolean.valueOf(firstLine[10]);
-		result.isLostGame = Boolean.valueOf(firstLine[11]);
+		result.isWonGame = Boolean.valueOf(firstLine[4]);
+		result.isLostGame = Boolean.valueOf(firstLine[5]);
 
 		for (int i = 1; i < gameStateString.length; i++) {
 
@@ -27,8 +22,10 @@ public class TestUtils {
 			double angle = Double.valueOf(line[8]);
 			int nextCPId = Integer.valueOf(line[9]);
 			int shieldCountDown = Integer.valueOf(line[10]);
+			int laps = Integer.valueOf(line[11]);
+			boolean hasUsedBoost = Boolean.valueOf(line[12]);
 
-			result.pods[i - 1] = new Player.Pod(i - 1, p, v, angle, Player.MatchConstants.checkPoints[nextCPId - 10], shieldCountDown);
+			result.pods[i - 1] = new Player.Pod(i - 1, p, v, angle, Player.MatchConstants.checkPoints[nextCPId - 10], shieldCountDown, laps, hasUsedBoost);
 
 		}
 

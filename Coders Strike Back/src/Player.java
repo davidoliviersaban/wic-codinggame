@@ -4,13 +4,14 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.Scanner;
 
 class Player {
 
 	// Misc stuff
 	public static boolean isDebugOn = true;
-	public static final boolean isCompareFailureOn = true;
+	public static final boolean isCompareFailureOn = false;
 
 	// Game constants, write them here once for all.
 	private static final int minThrust = 0;
@@ -33,7 +34,9 @@ class Player {
 	public static StupidAI stupidAI = new StupidAI(false);
 	public static StupidAI stupidAIOp = new StupidAI(true);
 	public static JahzNoobAI jazhNoobAI = new JahzNoobAI();
-	public static AI ai = stupidAI; // The one which is used
+	public static NoMoveAI noMoveAI = new NoMoveAI();
+	public static RandomShootingAI randomShootingAI = new RandomShootingAI();
+	public static AI ai = randomShootingAI; // The one which is used
 
 	public static void main(String args[]) {
 
@@ -82,42 +85,37 @@ class Player {
 		GameState result = null;
 
 		if (previousGameState == null) {
-			result = new GameState(1, 0, 0, 0, 0);
+			result = new GameState(1, 0, 0);
 		} else {
-			result = new GameState(previousGameState.round + 1, predictedGameState.myNbRoundsSinceLastCheckpoint, predictedGameState.opNbRoundsSinceLastCheckpoint, predictedGameState.myLaps,
-					predictedGameState.opLaps);
-			// TODO: evaluate more carefully myLaps and myNbRoundsSinceLastCheckpoint based on nextCheckPoint (we can't be sure of what we had predicted since we don't know what the op is doing)
-			// TODO: evaluate more carefully opLaps and opNbRoundsSinceLastCheckpoint, based on where the op Pods are
+			result = new GameState(previousGameState.round + 1, predictedGameState.myNbRoundsSinceLastCheckpoint, predictedGameState.opNbRoundsSinceLastCheckpoint);
+			// TODO: evaluate more carefully myNbRoundsSinceLastCheckpoint based on nextCheckPoint (we can't be sure of what we had predicted since we don't know what the op is doing)
+			// TODO: evaluate more carefully opNbRoundsSinceLastCheckpoint based on where the op Pods are
 		}
 
 		for (int i = 0; i < 2; i++) {
 			int x = in.nextInt();
-			int shieldCountDown = 0;
-			if (previousGameState != null) {
-				if (i == 0) {
-					Time.startRoundTimer();
-				}
-				shieldCountDown = Math.max(0, previousGameState.pods[i].shieldCountDown - 1);
 
+			if (previousGameState != null && i == 0) {
+				Time.startRoundTimer();
 			}
 
-			result.pods[i] = new Pod(i, new Point(x, in.nextInt()), new Vector(in.nextInt(), in.nextInt()), in.nextInt(), MatchConstants.checkPoints[in.nextInt()], shieldCountDown);
+			result.pods[i] = new Pod(i, new Point(x, in.nextInt()), new Vector(in.nextInt(), in.nextInt()), in.nextInt(), MatchConstants.checkPoints[in.nextInt()]);
 
 			if (predictedGameState != null) {
-				result.boostUsed[i] = predictedGameState.boostUsed[i]; // We can be sure of our prediction since it doesn't depend on the op
+				result.pods[i].shieldCountDown = Math.max(0, previousGameState.pods[i].shieldCountDown - 1); // 100% sure since it doesn't depend on the op
+				result.pods[i].laps = predictedGameState.pods[i].laps; // TODO: double check the prediction against the next checkpoint
+				result.pods[i].hasUsedBoost = predictedGameState.pods[i].hasUsedBoost; // 100% sure since it doesn't depend on the op
 			}
 
 		}
 		for (int i = 0; i < 2; i++) {
-			int shieldCountDown = 0;
-			if (previousGameState != null) {
-				shieldCountDown = Math.max(0, previousGameState.pods[i + 2].shieldCountDown - 1);
-			}
 
-			result.pods[i + 2] = new Pod(i + 2, new Point(in.nextInt(), in.nextInt()), new Vector(in.nextInt(), in.nextInt()), in.nextInt(), MatchConstants.checkPoints[in.nextInt()], shieldCountDown);
+			result.pods[i + 2] = new Pod(i + 2, new Point(in.nextInt(), in.nextInt()), new Vector(in.nextInt(), in.nextInt()), in.nextInt(), MatchConstants.checkPoints[in.nextInt()]);
 
 			if (predictedGameState != null) {
-				result.boostUsed[i + 2] = predictedGameState.boostUsed[i + 2]; // TODO: check the pod acceleration to detect a boost
+				result.pods[i + 2].shieldCountDown = Math.max(0, previousGameState.pods[i + 2].shieldCountDown - 1); // TODO: check the pod acceleration to detect a shield
+				result.pods[i + 2].laps = predictedGameState.pods[i + 2].laps; // TODO: check the nextCheckPoint to see if a lap was finished or not
+				result.pods[i + 2].hasUsedBoost = predictedGameState.pods[i + 2].hasUsedBoost; // TODO: check the pod acceleration to detect a boost
 			}
 
 		}
@@ -135,7 +133,7 @@ class Player {
 	// Runs a comparison between what CG gives us, and what we had predicted. May stop the game if any difference is found, in order to highlight the need of a new test
 	private static void compareInputAgainstPrediction(GameState gameStateFromInput) {
 
-		if (predictedGameState != null && !gameStateFromInput.equals(predictedGameState)) {
+		if (isCompareFailureOn && predictedGameState != null && !gameStateFromInput.equals(predictedGameState)) {
 
 			debug("Ran comparison between the input and the prediction and predicted:");
 			predictedGameState.print();
@@ -159,7 +157,7 @@ class Player {
 
 			previousGameState = gs;
 
-			Action[] opActions = stupidAIOp.computeAction(gs);
+			Action[] opActions = jazhNoobAI.computeAction(gs);
 
 			debug("Actions:");
 			myActions[0].print();
@@ -227,7 +225,7 @@ class Player {
 	public static class Time {
 		// Time constants
 		private static final int maxRoundTime = 150; // 150 ms max to answer
-		private static final int roundTimeMargin = 1;
+		private static final int roundTimeMargin = 10;
 		private static final int maxFirstRoundTime = 1000; // 1 s max to answer for first turn only
 		private static final int firstRoundTimeMargin = 50;
 		public static int maxRoundTimeWithMargin = maxRoundTime - roundTimeMargin;
@@ -431,12 +429,12 @@ class Player {
 				}
 
 				if (action.type == ActionType.BOOST) {
-					if (result.boostUsed[i]) {
+					if (pod.hasUsedBoost) {
 						// BOOST was already used in the game ! So get back to maxThrust
 						action.thrust = maxThrust;
 					}
 					// Now in any case it's used !
-					result.boostUsed[i] = true;
+					pod.hasUsedBoost = true;
 				}
 
 				pod.boost(action.target, action.thrust, result.round == 1);
@@ -454,7 +452,7 @@ class Player {
 
 			while (elapsedTime < 1.0) {
 
-				debug("ElapsedTime: " + elapsedTime);
+				// debug("ElapsedTime: " + elapsedTime);
 
 				EntitiesCollision firstCollision = null;
 
@@ -488,7 +486,7 @@ class Player {
 
 				if (firstCollision == null) {
 
-					debug("No collision !");
+					// debug("No collision !");
 
 					// No collision, we can move the pods until the end of the turn
 					moveAll(gs, 1 - elapsedTime);
@@ -497,7 +495,7 @@ class Player {
 
 				} else {
 
-					debug("Collision ! " + firstCollision);
+					// debug("Collision ! " + firstCollision);
 
 					if (firstCollision.time > 0) {
 						// We're now in a new "round" of collisions, so clear the list
@@ -598,8 +596,8 @@ class Player {
 				if (((Pod) e2).id < 2) {
 					gs.myNbRoundsSinceLastCheckpoint = -1;
 					if (((Pod) e2).nextCheckPoint.id == 1) {
-						gs.myLaps++;
-						if (gs.myLaps == MatchConstants.laps) {
+						((Pod) e2).laps++;
+						if (((Pod) e2).laps == MatchConstants.laps) {
 							gs.isWonGame = true;
 							debug("I'll win it !");
 						}
@@ -607,8 +605,8 @@ class Player {
 				} else {
 					gs.opNbRoundsSinceLastCheckpoint = -1;
 					if (((Pod) e2).nextCheckPoint.id == 1) {
-						gs.opLaps++;
-						if (gs.opLaps == MatchConstants.laps) {
+						((Pod) e2).laps++;
+						if (((Pod) e2).laps == MatchConstants.laps) {
 							gs.isLostGame = true;
 							debug("I'll loose it !");
 						}
@@ -619,8 +617,8 @@ class Player {
 				if (((Pod) e1).id < 2) {
 					gs.myNbRoundsSinceLastCheckpoint = -1;
 					if (((Pod) e1).nextCheckPoint.id == 1) {
-						gs.myLaps++;
-						if (gs.myLaps == MatchConstants.laps) {
+						((Pod) e1).laps++;
+						if (((Pod) e1).laps == MatchConstants.laps) {
 							gs.isWonGame = true;
 							debug("I'll win it !");
 						}
@@ -628,8 +626,8 @@ class Player {
 				} else {
 					gs.opNbRoundsSinceLastCheckpoint = -1;
 					if (((Pod) e1).nextCheckPoint.id == 1) {
-						gs.opLaps++;
-						if (gs.opLaps == MatchConstants.laps) {
+						((Pod) e1).laps++;
+						if (((Pod) e1).laps == MatchConstants.laps) {
 							gs.isLostGame = true;
 							debug("I'll loose it !");
 						}
@@ -1180,17 +1178,27 @@ class Player {
 
 	}
 
-	public static class Pod extends Entity {
+	public static class Pod extends Entity implements Comparable<Pod> {
 
 		public double angle;
 		public CheckPoint nextCheckPoint;
 		public int shieldCountDown;
+		public int laps;
+		public boolean hasUsedBoost;
 
-		public Pod(int id, Point p, Vector speed, double angle, CheckPoint nextCheckPoint, int shieldCountDown) {
+		public Pod(int id, Point p, Vector speed, double angle, CheckPoint nextCheckPoint) {
+			super(id, p, speed);
+			this.angle = angle;
+			this.nextCheckPoint = nextCheckPoint;
+		}
+
+		public Pod(int id, Point p, Vector speed, double angle, CheckPoint nextCheckPoint, int shieldCountDown, int laps, boolean hasUsedBoost) {
 			super(id, p, speed);
 			this.angle = angle;
 			this.nextCheckPoint = nextCheckPoint;
 			this.shieldCountDown = shieldCountDown;
+			this.laps = laps;
+			this.hasUsedBoost = hasUsedBoost;
 		}
 
 		public void boost(Point target, int thrust, boolean isFirstTurn) {
@@ -1242,14 +1250,14 @@ class Player {
 
 		@Override
 		public Entity copy() {
-			return new Pod(id, p.copy(), speed.copy(), angle, nextCheckPoint, shieldCountDown);
+			return new Pod(id, p.copy(), speed.copy(), angle, nextCheckPoint, shieldCountDown, laps, hasUsedBoost);
 		}
 
 		private static final DecimalFormat angleformatter = new DecimalFormat("+#000.00;-#");
 
 		@Override
 		public String toString() {
-			return "Pod " + id + " " + p + " " + speed + " " + angleformatter.format(angle) + " " + nextCheckPoint.id + " " + shieldCountDown;
+			return "Pod " + id + " " + p + " " + speed + " " + angleformatter.format(angle) + " " + nextCheckPoint.id + " " + shieldCountDown + " " + laps + " " + hasUsedBoost;
 		}
 
 		@Override
@@ -1259,6 +1267,8 @@ class Player {
 			long temp;
 			temp = Double.doubleToLongBits(angle);
 			result = prime * result + (int) (temp ^ (temp >>> 32));
+			result = prime * result + (hasUsedBoost ? 1231 : 1237);
+			result = prime * result + laps;
 			result = prime * result + ((nextCheckPoint == null) ? 0 : nextCheckPoint.hashCode());
 			result = prime * result + shieldCountDown;
 			return result;
@@ -1275,6 +1285,10 @@ class Player {
 			Pod other = (Pod) obj;
 			if (Math.abs((angle - other.angle) % 360) > 1)
 				return false;
+			if (hasUsedBoost != other.hasUsedBoost)
+				return false;
+			if (laps != other.laps)
+				return false;
 			if (nextCheckPoint == null) {
 				if (other.nextCheckPoint != null)
 					return false;
@@ -1285,6 +1299,19 @@ class Player {
 			return true;
 		}
 
+		@Override
+		public int compareTo(Pod o) {
+
+			if (this.laps != o.laps) {
+				return this.laps - o.laps;
+			} else if (this.nextCheckPoint.id != o.nextCheckPoint.id) {
+				return this.nextCheckPoint.id - o.nextCheckPoint.id;
+			} else {
+				return (int) (getDistanceSquare(o.p, o.nextCheckPoint.p) - getDistanceSquare(this.p, this.nextCheckPoint.p));
+			}
+
+		}
+
 	}
 
 	public static class GameState extends GameStateObject {
@@ -1292,9 +1319,6 @@ class Player {
 		public int round;
 		public int myNbRoundsSinceLastCheckpoint;
 		public int opNbRoundsSinceLastCheckpoint;
-		public int myLaps;
-		public int opLaps;
-		public boolean[] boostUsed;
 
 		public Pod[] pods;
 
@@ -1305,22 +1329,18 @@ class Player {
 			this.round = round;
 		}
 
-		public GameState(int round, int myNbRoundsSinceLastCheckpoint, int opNbRoundsSinceLastCheckpoint, int myLaps, int opLaps) {
+		public GameState(int round, int myNbRoundsSinceLastCheckpoint, int opNbRoundsSinceLastCheckpoint) {
 			super();
 			this.round = round;
 			this.myNbRoundsSinceLastCheckpoint = myNbRoundsSinceLastCheckpoint;
 			this.opNbRoundsSinceLastCheckpoint = opNbRoundsSinceLastCheckpoint;
-			this.myLaps = myLaps;
-			this.opLaps = opLaps;
-			boostUsed = new boolean[4];
 			pods = new Pod[4];
 			isWonGame = false;
 			isLostGame = false;
 		}
 
 		public GameState copy() {
-			GameState result = new GameState(round, myNbRoundsSinceLastCheckpoint, opNbRoundsSinceLastCheckpoint, myLaps, opLaps);
-			result.boostUsed = Arrays.copyOf(boostUsed, 4);
+			GameState result = new GameState(round, myNbRoundsSinceLastCheckpoint, opNbRoundsSinceLastCheckpoint);
 			for (int i = 0; i < pods.length; i++) {
 				result.pods[i] = (Pod) pods[i].copy();
 			}
@@ -1329,8 +1349,7 @@ class Player {
 
 		@Override
 		public String toString() {
-			return "GameState " + round + " " + myNbRoundsSinceLastCheckpoint + " " + opNbRoundsSinceLastCheckpoint + " " + myLaps + " " + opLaps + " " + boostUsed[0] + " " + boostUsed[1] + " "
-					+ boostUsed[2] + " " + boostUsed[3] + " " + isWonGame + " " + isLostGame;
+			return "GameState " + round + " " + myNbRoundsSinceLastCheckpoint + " " + opNbRoundsSinceLastCheckpoint + " " + isWonGame + " " + isLostGame;
 		}
 
 		@Override
@@ -1346,12 +1365,9 @@ class Player {
 		public int hashCode() {
 			final int prime = 31;
 			int result = 1;
-			result = prime * result + Arrays.hashCode(boostUsed);
 			result = prime * result + (isLostGame ? 1231 : 1237);
 			result = prime * result + (isWonGame ? 1231 : 1237);
-			result = prime * result + myLaps;
 			result = prime * result + myNbRoundsSinceLastCheckpoint;
-			result = prime * result + opLaps;
 			result = prime * result + opNbRoundsSinceLastCheckpoint;
 			result = prime * result + Arrays.hashCode(pods);
 			result = prime * result + round;
@@ -1367,17 +1383,11 @@ class Player {
 			if (getClass() != obj.getClass())
 				return false;
 			GameState other = (GameState) obj;
-			if (!Arrays.equals(boostUsed, other.boostUsed))
-				return false;
 			if (isLostGame != other.isLostGame)
 				return false;
 			if (isWonGame != other.isWonGame)
 				return false;
-			if (myLaps != other.myLaps)
-				return false;
 			if (myNbRoundsSinceLastCheckpoint != other.myNbRoundsSinceLastCheckpoint)
-				return false;
-			if (opLaps != other.opLaps)
 				return false;
 			if (opNbRoundsSinceLastCheckpoint != other.opNbRoundsSinceLastCheckpoint)
 				return false;
@@ -1399,8 +1409,9 @@ class Player {
 		}
 
 		public Action[] computeAction(GameState gs) {
+			GameState copy = gs.copy(); // Let's always work on a copy
 			printAIParameters();
-			return compute(gs);
+			return compute(copy);
 		}
 
 		public void printAI() {
@@ -1415,6 +1426,18 @@ class Player {
 			Action[] result = new Action[2];
 			result[0] = Action.getMoveAction(gs.pods[2].nextCheckPoint.p, 1);
 			result[1] = Action.getMoveAction(gs.pods[3].nextCheckPoint.p, 1);
+			return result;
+		}
+
+	}
+
+	public static class NoMoveAI extends AI {
+
+		@Override
+		public Action[] compute(GameState gs) {
+			Action[] result = new Action[2];
+			result[0] = Action.getMoveAction(gs.pods[2].nextCheckPoint.p, 0);
+			result[1] = Action.getMoveAction(gs.pods[3].nextCheckPoint.p, 0);
 			return result;
 		}
 
@@ -1473,6 +1496,65 @@ class Player {
 			}
 
 			return result;
+		}
+
+	}
+
+	public static class RandomShootingAI extends AI {
+
+		Random r = new Random();
+
+		@Override
+		public Action[] compute(GameState gs) {
+
+			Action[] bestActions = stupidAI.computeAction(gs); // Let's init with the stupid AI
+			Action[] myActions = bestActions;
+			Action[] opActions = noMoveAI.computeAction(gs); // We'll consider that the opponent is doing nothing
+
+			GameState computed = GameEngine.applyActionWithCopy(gs, myActions, opActions);
+
+			double bestEval = eval(computed);
+			double eval;
+
+			while (Time.isTimeLeft()) {
+				myActions = generateRandomActions(gs);
+				eval = eval(GameEngine.applyActionWithCopy(gs, myActions, opActions));
+				if (eval > bestEval) {
+					debug("Found something better !");
+					bestEval = eval;
+					bestActions = myActions;
+				}
+			}
+
+			return bestActions;
+		}
+
+		private Action[] generateRandomActions(GameState gs) {
+			Action[] result = new Action[2];
+
+			for (int i = 0; i < result.length; i++) {
+				result[i] = Action.getMoveAction(new Point(gs.pods[i].nextCheckPoint.p.x + r.nextInt(500) - 250, gs.pods[i].nextCheckPoint.p.y + r.nextInt(500) - 250), r.nextInt(maxThrust));
+			}
+
+			return result;
+		}
+
+		public double eval(GameState gs) {
+
+			Pod myFirstPod = getFirstPod(gs);
+
+			double result = 1000 * myFirstPod.laps + 100 * (myFirstPod.nextCheckPoint.id - 10) + (100 - getDistanceSquare(myFirstPod.p, myFirstPod.nextCheckPoint.p) * 100 / 337000000);
+
+			return result;
+		}
+
+		private Pod getFirstPod(GameState gs) {
+
+			if (gs.pods[0].compareTo(gs.pods[1]) > 0) {
+				return gs.pods[0];
+			} else {
+				return gs.pods[1];
+			}
 		}
 
 	}
