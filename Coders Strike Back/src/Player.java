@@ -117,7 +117,7 @@ class Player {
 			result.pods[i + 2] = new Pod(i + 2, new Point(in.nextInt(), in.nextInt()), new Vector(in.nextInt(), in.nextInt()), in.nextInt(), MatchConstants.checkPoints[in.nextInt()], shieldCountDown);
 
 			if (predictedGameState != null) {
-				result.boostUsed[i] = predictedGameState.boostUsed[i]; // TODO: check the pod acceleration to detect a boost
+				result.boostUsed[i + 2] = predictedGameState.boostUsed[i + 2]; // TODO: check the pod acceleration to detect a boost
 			}
 
 		}
@@ -159,7 +159,7 @@ class Player {
 
 			previousGameState = gs;
 
-			Action[] opActions = jazhNoobAI.computeAction(gs);
+			Action[] opActions = stupidAIOp.computeAction(gs);
 
 			debug("Actions:");
 			myActions[0].print();
