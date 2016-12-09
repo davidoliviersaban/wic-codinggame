@@ -17,7 +17,7 @@ public class TestAI {
 
 		String[] inputGameStateString = {
 
-				"GameState 6 5 5 0 0 false false",
+				"GameState 6 5 5 0 0 false false false false false false",
 				"Pod 0 Point +08381.00 +06911.00 Vector -00491.00 +00138.00 +192.00 11 0",
 				"Pod 1 Point +08740.00 +05412.00 Vector -00288.00 +00019.00 +156.00 11 0",
 				"Pod 2 Point +11662.00 +06879.00 Vector +00000.00 +00000.00 +183.00 11 0",
