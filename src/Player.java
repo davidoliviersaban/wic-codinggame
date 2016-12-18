@@ -30,13 +30,17 @@ class Player {
 	private static GameState predictedGameState;
 	private static boolean stopGame = false;
 
+	// Scores
+	public static final ScoreEvaluation firstPodsScore = new FirstPodsScore();
+
 	// AIs
-	public static StupidAI stupidAI = new StupidAI(false);
-	public static StupidAI stupidAIOp = new StupidAI(true);
-	public static JahzNoobAI jazhNoobAI = new JahzNoobAI();
-	public static NoMoveAI noMoveAI = new NoMoveAI();
-	public static RandomShootingAI randomShootingAI = new RandomShootingAI();
-	public static AI ai = randomShootingAI; // The one which is used
+	public static final StupidAI stupidAI = new StupidAI(false);
+	public static final StupidAI stupidAIOp = new StupidAI(true);
+	public static final JahzNoobAI jazhNoobAI = new JahzNoobAI();
+	public static final NoMoveAI noMoveAI = new NoMoveAI();
+	public static final RaceAndAttackAI raceAndAttackAI = new RaceAndAttackAI(false);
+	public static final HillClimbingAI hillClimbingAI = new HillClimbingAI(5, firstPodsScore, stupidAI, stupidAIOp, false);
+	public static final AI ai = raceAndAttackAI; // The one which is used
 
 	public static void main(String args[]) {
 
@@ -76,13 +80,14 @@ class Player {
 			MatchConstants.print();
 		}
 
-		// Memory.initMemory();
+		Memory.initMemory();
 
 	}
 
 	private static GameState initRound(Scanner in) {
 
 		GameState result = null;
+		GameEngine.nbApplyAction = 0;
 
 		if (previousGameState == null) {
 			result = new GameState(1, 0, 0);
@@ -114,7 +119,12 @@ class Player {
 
 			if (predictedGameState != null) {
 				result.pods[i + 2].shieldCountDown = Math.max(0, previousGameState.pods[i + 2].shieldCountDown - 1); // TODO: check the pod acceleration to detect a shield
-				result.pods[i + 2].laps = predictedGameState.pods[i + 2].laps; // TODO: check the nextCheckPoint to see if a lap was finished or not
+
+				result.pods[i + 2].laps = previousGameState.pods[i + 2].laps;
+				if (previousGameState.pods[i + 2].nextCheckPoint.id != 11 && result.pods[i + 2].nextCheckPoint.id == 11) {
+					result.pods[i + 2].laps++;
+				}
+
 				result.pods[i + 2].hasUsedBoost = predictedGameState.pods[i + 2].hasUsedBoost; // TODO: check the pod acceleration to detect a boost
 			}
 
@@ -157,7 +167,7 @@ class Player {
 
 			previousGameState = gs;
 
-			Action[] opActions = jazhNoobAI.computeAction(gs);
+			Action[] opActions = stupidAIOp.computeAction(gs);
 
 			debug("Actions:");
 			myActions[0].print();
@@ -167,6 +177,7 @@ class Player {
 
 			predictedGameState = GameEngine.applyActionWithCopy(gs, myActions, opActions);
 
+			debug("Performed " + GameEngine.nbApplyAction + " applications of the game engine");
 			Time.debugRoundDuration();
 		}
 
@@ -225,7 +236,7 @@ class Player {
 	public static class Time {
 		// Time constants
 		private static final int maxRoundTime = 150; // 150 ms max to answer
-		private static final int roundTimeMargin = 10;
+		private static final int roundTimeMargin = 5;
 		private static final int maxFirstRoundTime = 1000; // 1 s max to answer for first turn only
 		private static final int firstRoundTimeMargin = 50;
 		public static int maxRoundTimeWithMargin = maxRoundTime - roundTimeMargin;
@@ -302,7 +313,8 @@ class Player {
 	}
 
 	public static enum ActionType {
-		MOVE, BOOST, SHIELD
+		MOVE, BOOST, SHIELD;
+		
 	}
 
 	public static class Action extends GameStateObject {
@@ -335,6 +347,10 @@ class Player {
 			return new Action(ActionType.SHIELD, target, minThrust);
 		}
 
+		public Action copy() {
+			return new Action(type, target, thrust);
+		}
+
 	}
 
 	// Stores stuff which is not going to change for the whole match, but could change from one match to another
@@ -362,11 +378,12 @@ class Player {
 		// Apply the actions of the players on a given gamestate, and return the new one as if computed by CG (or almost...). Performs a copy, so the provided gs will stay untouched.
 		public static GameState applyActionWithCopy(GameState gs, Action[] myActions, Action[] opActions) {
 			GameState result = gs.copy();
-			return applyActionWithoutCopy(result, myActions, opActions);
+			applyActionWithoutCopy(result, myActions, opActions);
+			return result;
 		}
 
 		// Apply the actions of the players on a given gamestate, and return the new one as if computed by CG (or almost...). Does NOT perform a copy, so the provided gamestate will be modified
-		public static GameState applyActionWithoutCopy(GameState result, Action[] myActions, Action[] opActions) {
+		public static void applyActionWithoutCopy(GameState result, Action[] myActions, Action[] opActions) {
 
 			if (!result.isWonGame && !result.isLostGame) {
 				// If the game is not finished, apply the engine, otherwise there is nothing to do
@@ -383,17 +400,14 @@ class Player {
 				result.opNbRoundsSinceLastCheckpoint++;
 
 				if (result.myNbRoundsSinceLastCheckpoint == maxTurnToReachCheckPoint) {
-					debug("I lose due to timeout :(");
 					result.isLostGame = true;
 				} else if (result.opNbRoundsSinceLastCheckpoint == maxTurnToReachCheckPoint) {
-					debug("I win due to timeout :)");
 					result.isWonGame = true;
 				}
 
 				nbApplyAction++;
 			}
 
-			return result;
 		}
 
 		// If a pod used a shield, update the shieldCountDown
@@ -595,20 +609,18 @@ class Player {
 				((Pod) e2).nextCheckPoint = MatchConstants.checkPoints[(((Pod) e2).nextCheckPoint.id + 1 - 10) % MatchConstants.checkPoints.length];
 				if (((Pod) e2).id < 2) {
 					gs.myNbRoundsSinceLastCheckpoint = -1;
-					if (((Pod) e2).nextCheckPoint.id == 1) {
+					if (((Pod) e2).nextCheckPoint.id == 11) {
 						((Pod) e2).laps++;
 						if (((Pod) e2).laps == MatchConstants.laps) {
 							gs.isWonGame = true;
-							debug("I'll win it !");
 						}
 					}
 				} else {
 					gs.opNbRoundsSinceLastCheckpoint = -1;
-					if (((Pod) e2).nextCheckPoint.id == 1) {
+					if (((Pod) e2).nextCheckPoint.id == 11) {
 						((Pod) e2).laps++;
 						if (((Pod) e2).laps == MatchConstants.laps) {
 							gs.isLostGame = true;
-							debug("I'll loose it !");
 						}
 					}
 				}
@@ -616,20 +628,18 @@ class Player {
 				((Pod) e1).nextCheckPoint = MatchConstants.checkPoints[(((Pod) e1).nextCheckPoint.id + 1 - 10) % MatchConstants.checkPoints.length];
 				if (((Pod) e1).id < 2) {
 					gs.myNbRoundsSinceLastCheckpoint = -1;
-					if (((Pod) e1).nextCheckPoint.id == 1) {
+					if (((Pod) e1).nextCheckPoint.id == 11) {
 						((Pod) e1).laps++;
 						if (((Pod) e1).laps == MatchConstants.laps) {
 							gs.isWonGame = true;
-							debug("I'll win it !");
 						}
 					}
 				} else {
 					gs.opNbRoundsSinceLastCheckpoint = -1;
-					if (((Pod) e1).nextCheckPoint.id == 1) {
+					if (((Pod) e1).nextCheckPoint.id == 11) {
 						((Pod) e1).laps++;
 						if (((Pod) e1).laps == MatchConstants.laps) {
 							gs.isLostGame = true;
-							debug("I'll loose it !");
 						}
 					}
 				}
@@ -1190,6 +1200,9 @@ class Player {
 			super(id, p, speed);
 			this.angle = angle;
 			this.nextCheckPoint = nextCheckPoint;
+			this.shieldCountDown = 0;
+			this.laps = 1;
+			this.hasUsedBoost = false;
 		}
 
 		public Pod(int id, Point p, Vector speed, double angle, CheckPoint nextCheckPoint, int shieldCountDown, int laps, boolean hasUsedBoost) {
@@ -1305,13 +1318,31 @@ class Player {
 			if (this.laps != o.laps) {
 				return this.laps - o.laps;
 			} else if (this.nextCheckPoint.id != o.nextCheckPoint.id) {
-				return this.nextCheckPoint.id - o.nextCheckPoint.id;
+				int result = this.nextCheckPoint.id - o.nextCheckPoint.id;
+				if (this.nextCheckPoint.id == 10) {
+					result += MatchConstants.checkPoints.length;
+				}
+				if (o.nextCheckPoint.id == 10) {
+					result -= MatchConstants.checkPoints.length;
+				}
+
+				return result;
 			} else {
 				return (int) (getDistanceSquare(o.p, o.nextCheckPoint.p) - getDistanceSquare(this.p, this.nextCheckPoint.p));
 			}
 
 		}
 
+		public double compareToNew(Pod o) {
+
+			double result = 0;
+
+			result += this.laps * MatchConstants.checkPoints.length + this.nextCheckPoint.id - (o.laps * MatchConstants.checkPoints.length + o.nextCheckPoint.id);
+
+			result += Math.min(100000000, Math.max(-100000000, getDistanceSquare(o.p, o.nextCheckPoint.p) - getDistanceSquare(this.p, this.nextCheckPoint.p)) / 100000000);
+
+			return result;
+		}
 	}
 
 	public static class GameState extends GameStateObject {
@@ -1337,6 +1368,24 @@ class Player {
 			pods = new Pod[4];
 			isWonGame = false;
 			isLostGame = false;
+		}
+
+		public Pod[] getMyOrderedPod() {
+
+			if (pods[0].compareTo(pods[1]) > 0) {
+				return new Pod[] { pods[0], pods[1] };
+			} else {
+				return new Pod[] { pods[1], pods[0] };
+			}
+		}
+
+		public Pod[] getOpOrderedPod() {
+
+			if (pods[2].compareTo(pods[3]) > 0) {
+				return new Pod[] { pods[2], pods[3] };
+			} else {
+				return new Pod[] { pods[3], pods[2] };
+			}
 		}
 
 		public GameState copy() {
@@ -1402,6 +1451,13 @@ class Player {
 
 	public static abstract class AI {
 
+		public boolean simulateOp = false;
+
+		public AI(boolean simulateOp) {
+			super();
+			this.simulateOp = simulateOp;
+		}
+
 		public abstract Action[] compute(GameState gs);
 
 		public void printAIParameters() {
@@ -1421,6 +1477,10 @@ class Player {
 
 	public static class JahzNoobAI extends AI {
 
+		public JahzNoobAI() {
+			super(false);
+		}
+
 		@Override
 		public Action[] compute(GameState gs) {
 			Action[] result = new Action[2];
@@ -1432,6 +1492,10 @@ class Player {
 	}
 
 	public static class NoMoveAI extends AI {
+
+		public NoMoveAI() {
+			super(false);
+		}
 
 		@Override
 		public Action[] compute(GameState gs) {
@@ -1445,11 +1509,9 @@ class Player {
 
 	public static class StupidAI extends AI {
 
-		public boolean simulateOp = false;
-
 		public StupidAI(boolean simulateOp) {
-			super();
-			this.simulateOp = simulateOp;
+			super(simulateOp);
+
 		}
 
 		@Override
@@ -1500,61 +1562,337 @@ class Player {
 
 	}
 
-	public static class RandomShootingAI extends AI {
+	public static class HillClimbingAI extends AI {
 
-		Random r = new Random();
+		private int depth;
+		public ScoreEvaluation score;
+		private AI myInitAI;
+		private AI opAI;
+		private Random r;
+		private Action[][] bestActionsFromLastTurn;
+
+		public HillClimbingAI(int depth, ScoreEvaluation score, AI myInitAI, AI opAI, boolean simulateOp) {
+			super(simulateOp);
+			this.depth = depth;
+			this.score = score;
+			this.myInitAI = myInitAI;
+			this.opAI = opAI;
+			this.r = new Random();
+		}
+
+		@Override
+		public void printAIParameters() {
+			if (isDebugOn) {
+				debug("Current depth used: " + depth);
+				debugActionList(bestActionsFromLastTurn);
+			}
+
+		}
 
 		@Override
 		public Action[] compute(GameState gs) {
 
-			Action[] bestActions = stupidAI.computeAction(gs); // Let's init with the stupid AI
-			Action[] myActions = bestActions;
-			Action[] opActions = noMoveAI.computeAction(gs); // We'll consider that the opponent is doing nothing
+			GameEngine.nbApplyAction = 0;
 
-			GameState computed = GameEngine.applyActionWithCopy(gs, myActions, opActions);
+			int iterations = 0;
+			int acceptance = 0;
 
-			double bestEval = eval(computed);
-			double eval;
+			Action[][] initActions = generateRandomIndividual(gs);
+			double initScore = score.getActionListScore(gs, initActions, opAI);
 
-			while (Time.isTimeLeft()) {
-				myActions = generateRandomActions(gs);
-				eval = eval(GameEngine.applyActionWithCopy(gs, myActions, opActions));
-				if (eval > bestEval) {
-					debug("Found something better !");
-					bestEval = eval;
-					bestActions = myActions;
+			Action[][] bestActions = initActions;
+			double bestScore = initScore;
+
+			Action[][] currentActions = initActions;
+			double currentScore;
+			GameState currentGs;
+
+			debug("First iteration: " + iterations + " nbApplyAction: " + GameEngine.nbApplyAction + " bestScore: " + String.format("%3.4f", bestScore));
+
+			while (Time.isTimeLeft(gs.round == 1)) {
+
+				currentGs = gs.copy();
+
+				currentActions = getNeighbour(currentActions, currentGs);
+				currentScore = score.getActionListScore(currentGs, currentActions, opAI);
+
+				// Keep track of the best solution found
+				if (currentScore > bestScore) {
+					bestActions = currentActions;
+					bestScore = currentScore;
+					acceptance++;
+				}
+
+				iterations++;
+
+				if (iterations % 1000 == 1) {
+					debug("Full iterations: " + iterations + " nbApplyAction: " + GameEngine.nbApplyAction + " bestScore: " + String.format("%3.4f", bestScore) + " AccRatio: "
+							+ String.format("%3.2f", acceptance / (double) iterations * 100));
+				}
+
+			}
+
+			debug("Full iterations: " + iterations + " nbApplyAction: " + GameEngine.nbApplyAction + " bestScore: " + String.format("%3.4f", bestScore) + " AccRatio: "
+					+ String.format("%3.2f", acceptance / (double) iterations * 100));
+
+			// Keep the best moves to restart from here next turn. Probably a good idea, but not necessarily always better than restarting from scratch
+			if (bestScore > score.minimalScore) {
+				bestActionsFromLastTurn = bestActions;
+			} else {
+				bestActionsFromLastTurn = null;
+			}
+
+			return bestActions[0];
+		}
+
+		public static final double[] pickingProba = { 0.5, 0.7, 0.8, 0.9, 1.0 };
+
+		public Action[][] getNeighbour(Action[][] currentActions, GameState gs) {
+
+			Action[][] result = new Action[depth][2];
+
+			int modifiedAction = -1;
+			double random = Math.random();
+			for (int i = 0; i < pickingProba.length && modifiedAction == -1; i++) {
+				if (random <= pickingProba[i]) {
+					modifiedAction = i;
 				}
 			}
 
-			return bestActions;
+			for (int i = 0; i < result.length; i++) {
+				if (i != modifiedAction) {
+					result[i] = currentActions[i];
+				} else {
+
+					result[i] = generateRandomActions(gs);
+
+				}
+			}
+
+			return result;
+		}
+
+		public Action[][] generateRandomIndividual(GameState gs) {
+
+			Action[][] result = new Action[depth][2];
+			GameState currentGs = gs.copy();
+
+			if (bestActionsFromLastTurn == null) {
+
+				Action[] opActions;
+
+				for (int i = 0; i < result.length; i++) {
+					result[i] = myInitAI.computeAction(currentGs);
+					opActions = opAI.computeAction(currentGs);
+					GameEngine.applyActionWithoutCopy(currentGs, result[i], opActions);
+					if (currentGs.isLostGame || currentGs.isWonGame) {
+						depth = i + 1;
+						break;
+					}
+				}
+
+			} else {
+				System.arraycopy(bestActionsFromLastTurn, 1, result, 0, bestActionsFromLastTurn.length - 1);
+				for (int i = 0; i < result.length - 1; i++) {
+					GameEngine.applyActionWithoutCopy(currentGs, result[i], opAI.compute(currentGs));
+				}
+				result[result.length - 1] = myInitAI.compute(currentGs);
+			}
+
+			return result;
 		}
 
 		private Action[] generateRandomActions(GameState gs) {
 			Action[] result = new Action[2];
 
 			for (int i = 0; i < result.length; i++) {
-				result[i] = Action.getMoveAction(new Point(gs.pods[i].nextCheckPoint.p.x + r.nextInt(500) - 250, gs.pods[i].nextCheckPoint.p.y + r.nextInt(500) - 250), r.nextInt(maxThrust));
+				// result[i] = Action.getMoveAction(new Point(gs.pods[i].nextCheckPoint.p.x + r.nextInt(500) - 250, gs.pods[i].nextCheckPoint.p.y + r.nextInt(500) - 250), r.nextInt(maxThrust));
+				result[i] = Action.getMoveAction(new Point(r.nextInt(16000), r.nextInt(9000)), r.nextInt(maxThrust));
 			}
 
 			return result;
 		}
 
-		public double eval(GameState gs) {
+		private static void debugActionList(Action[][] actionList) {
+			if (actionList != null) {
+				String bestActions = "BestActions ";
+				for (Action[] actions : actionList) {
+					if (actions != null) {
+						bestActions += actions[0] + debugSep + actions[1] + debugSep;
+					} else {
+						bestActions += "null" + debugSep;
+					}
 
-			Pod myFirstPod = getFirstPod(gs);
-
-			double result = 1000 * myFirstPod.laps + 100 * (myFirstPod.nextCheckPoint.id - 10) + (100 - getDistanceSquare(myFirstPod.p, myFirstPod.nextCheckPoint.p) * 100 / 337000000);
-
-			return result;
+				}
+				debugForInput(bestActions);
+			}
 		}
 
-		private Pod getFirstPod(GameState gs) {
+	}
 
-			if (gs.pods[0].compareTo(gs.pods[1]) > 0) {
-				return gs.pods[0];
+	public static class RaceAndAttackAI extends AI {
+
+		public RaceAndAttackAI(boolean simulateOp) {
+			super(simulateOp);
+		}
+
+		@Override
+		public Action[] compute(GameState gs) {
+			Action[] result = new Action[2];
+
+			Pod racer;
+			Pod blocker;
+			Pod opRacer;
+
+			if (!simulateOp) {
+				Pod[] myPods = gs.getMyOrderedPod();
+				racer = myPods[0];
+				blocker = myPods[1];
+				Pod[] opPods = gs.getOpOrderedPod();
+				opRacer = opPods[0];
 			} else {
-				return gs.pods[1];
+				Pod[] myPods = gs.getOpOrderedPod();
+				racer = myPods[0];
+				blocker = myPods[1];
+				Pod[] opPods = gs.getMyOrderedPod();
+				opRacer = opPods[0];
 			}
+
+			debug("Racer: " + racer.id + " Blocker: " + blocker.id + " OpRacer: " + opRacer.id);
+
+			Action[] opPredictedActions = stupidAIOp.computeAction(gs);
+			Action opRacerPredictedAction = null;
+			if (opRacer.id == 2) {
+				opRacerPredictedAction = opPredictedActions[0];
+			} else {
+				opRacerPredictedAction = opPredictedActions[1];
+			}
+			opRacer.boost(opRacerPredictedAction.target, opRacerPredictedAction.thrust, gs.round == 1);
+
+			if (gs.round == 1) {
+				Action racerAction = Action.getBoostAction(racer.nextCheckPoint.p);
+				Action blockerAction = Action.getMoveAction(opRacer.p, maxThrust);
+				if (racer.id == 0) {
+					result[0] = racerAction;
+					result[1] = blockerAction;
+				} else {
+					result[0] = blockerAction;
+					result[1] = racerAction;
+				}
+
+			} else {
+
+				for (int i = 0; i < 2; i++) {
+					Pod pod = gs.pods[i];
+					Point target;
+
+					if (pod.equals(racer)) {
+						target = addVectorToPoint(pod.nextCheckPoint.p, mulVector(pod.speed, -1));
+					} else {
+						target = addVectorToPoint(addVectorToPoint(opRacer.p, opRacer.speed), mulVector(pod.speed, -1));
+					}
+
+					result[i] = getThere(pod, target);
+
+				}
+
+			}
+
+			return result;
+		}
+
+		public Action getThere(Pod pod, Point target) {
+
+			Action result;
+
+			double angle = getAngleBetweenVectorAndAngle(pod.angle, new Vector(pod.p, target));
+
+			if (angle > 90) {
+				// We're not in the good direction, slow down
+				result = Action.getMoveAction(target, minThrust);
+			} else {
+				// We're well aligned
+				double d = getDistance(pod.p, target);
+
+				if (true) {
+					// We're far, go fast (boost the first turn, after that will default to 100)
+					result = Action.getMoveAction(target, maxThrust);
+				} else {
+					// Slow down
+					result = Action.getMoveAction(target, 75 + (int) Math.round(d / 4000 * 25));
+				}
+
+			}
+
+			return result;
+
+		}
+
+	}
+
+	public static abstract class ScoreEvaluation {
+
+		public int minimalScore;
+		public int maximalScore;
+
+		public ScoreEvaluation(int minimalScore, int maximalScore) {
+			super();
+			this.minimalScore = minimalScore;
+			this.maximalScore = maximalScore;
+		}
+
+		// The score of a given GameState
+		public abstract double getGameStateScore(GameState gs);
+
+		// The score of the GameState we get when applying our chain of actions, recomputing the opponent ones based on the provided AI
+		public double getActionListScore(GameState gs, Action[][] myNTurnActions, AI opAi) {
+
+			Action[] opActions;
+			GameState currentGs = gs.copy();
+
+			for (Action[] myActions : myNTurnActions) {
+				opActions = opAi.compute(currentGs);
+				GameEngine.applyActionWithoutCopy(currentGs, myActions, opActions);
+				if (currentGs.isLostGame || currentGs.isWonGame) {
+					// No need to continue iterating, the game is finished !
+					break;
+				}
+			}
+
+			return getGameStateScore(currentGs);
+
+		}
+
+	}
+
+	// Here we'll just compare the first pod of each player
+	public static class FirstPodsScore extends ScoreEvaluation {
+
+		private static final int minimalScore = -5;
+		private static final int maximalScore = 5;
+
+		public FirstPodsScore() {
+			super(minimalScore, maximalScore);
+		}
+
+		@Override
+		public double getGameStateScore(GameState gs) {
+
+			double result = 0;
+
+			if (gs.isWonGame) {
+				result = maximalScore;
+			} else if (gs.isLostGame) {
+				result = minimalScore;
+			} else {
+				Pod myFirstPod = gs.getMyOrderedPod()[0];
+				Pod opFirstPod = gs.getOpOrderedPod()[0];
+
+				result = myFirstPod.compareToNew(opFirstPod);
+			}
+
+			return result;
+
 		}
 
 	}
